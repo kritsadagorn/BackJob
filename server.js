@@ -1,5 +1,5 @@
 // Load environment variables first
-require('dotenv').config();
+require("dotenv").config();
 
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
@@ -13,9 +13,9 @@ app.use(express.json());
 
 // Add a health check endpoint to verify environment
 app.get("/health", (req, res) => {
-  res.json({ 
-    status: "OK", 
-    database_configured: !!process.env.DATABASE_URL 
+  res.json({
+    status: "OK",
+    database_configured: !!process.env.DATABASE_URL,
   });
 });
 
@@ -157,7 +157,7 @@ app.get("/api/jobs", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Database error:', error);
+    console.error("Database error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -201,7 +201,7 @@ app.get("/api/jobs/:id", async (req, res) => {
     if (!job) return res.status(404).json({ message: "Job not found" });
     res.json(job);
   } catch (error) {
-    console.error('Database error:', error);
+    console.error("Database error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -213,7 +213,7 @@ app.get("/api/query/position", async (req, res) => {
     });
     res.json(result);
   } catch (error) {
-    console.error('Database error:', error);
+    console.error("Database error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -225,7 +225,7 @@ app.get("/api/query/position-group", async (req, res) => {
     });
     res.json(result);
   } catch (error) {
-    console.error('Database error:', error);
+    console.error("Database error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -249,13 +249,15 @@ app.get("/api/query/mainpageScore", async (req, res) => {
 
     res.json(transformed);
   } catch (error) {
-    console.error('Database error:', error);
+    console.error("Database error:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+
+// CRITICAL: Must bind to "0.0.0.0" for Railway to work
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Database URL configured: ${!!process.env.DATABASE_URL}`);
 });
