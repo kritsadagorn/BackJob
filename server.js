@@ -19,6 +19,15 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Add this right after your /health endpoint
+app.get("/", (req, res) => {
+  res.json({ 
+    message: "BackJob API is running!",
+    timestamp: new Date().toISOString(),
+    port: process.env.PORT || 5000
+  });
+});
+
 /**
  * [GET] /api/jobs (Query all jobs) ✅
  * [GET] /api/jobs/:id (Query info job) ✅
@@ -256,8 +265,9 @@ app.get("/api/query/mainpageScore", async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-// CRITICAL: Must bind to "0.0.0.0" for Railway to work
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Database URL configured: ${!!process.env.DATABASE_URL}`);
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`✅ Host: 0.0.0.0`);
+  console.log(`✅ Database URL configured: ${!!process.env.DATABASE_URL}`);
+  console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
 });
