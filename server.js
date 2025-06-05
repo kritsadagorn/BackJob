@@ -1,3 +1,6 @@
+// Load environment variables first
+require('dotenv').config();
+
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const cors = require("cors");
@@ -7,6 +10,14 @@ const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());
+
+// Add a health check endpoint to verify environment
+app.get("/health", (req, res) => {
+  res.json({ 
+    status: "OK", 
+    database_configured: !!process.env.DATABASE_URL 
+  });
+});
 
 /**
  * [GET] /api/jobs (Query all jobs) ✅
@@ -90,60 +101,65 @@ app.get("/api/jobs", async (req, res) => {
         }),
   };
 
-  const jobs = await prisma.position_details.findMany({
-    skip: page * size, // you were skipping 0 before; now dynamic
-    take: Number(size),
-    where: whereQuery, // <-- this applies your filters
-    orderBy: {
-      trending: {
-        level: sortTrending,
+  try {
+    const jobs = await prisma.position_details.findMany({
+      skip: page * size, // you were skipping 0 before; now dynamic
+      take: Number(size),
+      where: whereQuery, // <-- this applies your filters
+      orderBy: {
+        trending: {
+          level: sortTrending,
+        },
       },
-    },
-    select: {
-      id: true,
-      description: true,
-      created_at: true,
-      updated_at: true,
-      trending: {
-        select: { name: true },
-      },
-      position: {
-        select: {
-          id: true,
-          name: true,
-          group_id: true,
-          job_skills: {
-            select: {
-              job_id: true,
-              skill_id: true,
-              score: true,
-              skills: {
-                select: {
-                  id: true,
-                  name: true,
-                  group: true,
+      select: {
+        id: true,
+        description: true,
+        created_at: true,
+        updated_at: true,
+        trending: {
+          select: { name: true },
+        },
+        position: {
+          select: {
+            id: true,
+            name: true,
+            group_id: true,
+            job_skills: {
+              select: {
+                job_id: true,
+                skill_id: true,
+                score: true,
+                skills: {
+                  select: {
+                    id: true,
+                    name: true,
+                    group: true,
+                  },
                 },
               },
             },
           },
         },
       },
-    },
-  });
+    });
 
-  console.log(JSON.stringify(jobs, null, 2)); // Pretty print result
-  // Get total job query
-  const totalData = await prisma.position_details.count({
-    where: whereQuery,
-  });
+    console.log(JSON.stringify(jobs, null, 2)); // Pretty print result
+    // Get total job query
+    const totalData = await prisma.position_details.count({
+      where: whereQuery,
+    });
 
-  res.json({
-    items: jobs,
-    pagination: {
-      total: totalData,
-      pageTotal: Math.trunc(totalData / size),
-    },
-  });
+    res.json({
+      items: jobs,
+      pagination: {
+        total: totalData,
+        pageTotal: Math.ceil(totalData / size), // Fixed: use Math.ceil instead of Math.trunc
+      },
+    });
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ✅ ดึงข้อมูลตำแหน่งงานเฉพาะ ID
@@ -185,44 +201,61 @@ app.get("/api/jobs/:id", async (req, res) => {
     if (!job) return res.status(404).json({ message: "Job not found" });
     res.json(job);
   } catch (error) {
+    console.error('Database error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.get("/api/query/position", async (req, res) => {
-  const result = await prisma.position.findMany({
-    select: { id: true, name: true },
-  });
-  res.json(result);
+  try {
+    const result = await prisma.position.findMany({
+      select: { id: true, name: true },
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get("/api/query/position-group", async (req, res) => {
-  const result = await prisma.position_group.findMany({
-    select: { id: true, name: true },
-  });
-  res.json(result);
+  try {
+    const result = await prisma.position_group.findMany({
+      select: { id: true, name: true },
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get("/api/query/mainpageScore", async (req, res) => {
-  const result = await prisma.job_skills.findMany({
-    select: {
-      score: true,
-      skills: {
-        select: {
-          name: true,
+  try {
+    const result = await prisma.job_skills.findMany({
+      select: {
+        score: true,
+        skills: {
+          select: {
+            name: true,
+          },
         },
       },
-    },
-  });
-  const transformed = result.map((item) => ({
-    skill: item.skills?.name ?? "Unknown", // เผื่อกรณี null
-    score: item.score,
-  }));
+    });
+    const transformed = result.map((item) => ({
+      skill: item.skills?.name ?? "Unknown", // เผื่อกรณี null
+      score: item.score,
+    }));
 
-  res.json(transformed);
+    res.json(transformed);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Database URL configured: ${!!process.env.DATABASE_URL}`);
 });
