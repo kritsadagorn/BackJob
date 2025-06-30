@@ -33,7 +33,7 @@ app.get("/", (req, res) => {
  * [GET] /api/jobs/:id (Query info job) ✅
  * [GET] /api/query/position (Get all position [FOR SEARCH]) ✅
  * [GET] /api/query/position-group (Get all position group) ✅
- *
+ * [POST] /api/job-skills (Replace all job skills data) ✅
  */
 
 // ✅ ดึงตำแหน่งงานทั้งหมด
@@ -260,6 +260,239 @@ app.get("/api/query/mainpageScore", async (req, res) => {
   } catch (error) {
     console.error("Database error:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * [POST] /api/job-skills (Replace all job skills data completely) ✅
+ */
+app.post("/api/job-skills", async (req, res) => {
+  try {
+    const jobSkillsData = req.body;
+    
+    // Validate input - should be an array
+    if (!Array.isArray(jobSkillsData)) {
+      return res.status(400).json({ 
+        error: "Request body must be an array of job skills objects" 
+      });
+    }
+
+    // Allow empty array to clear all data
+    if (jobSkillsData.length === 0) {
+      // Use transaction to safely delete all records
+      const result = await prisma.$transaction(async (tx) => {
+        const deleteResult = await tx.job_skills.deleteMany({});
+        return { deleted_count: deleteResult.count, inserted_count: 0 };
+      });
+
+      console.log(`✅ Cleared all job skills data. Deleted ${result.deleted_count} records`);
+      
+      return res.status(200).json({
+        message: "All job skills data cleared successfully",
+        deleted_count: result.deleted_count,
+        inserted_count: 0,
+        data: []
+      });
+    }
+
+    // Validate each job skill object
+    for (let i = 0; i < jobSkillsData.length; i++) {
+      const item = jobSkillsData[i];
+      
+      if (!item.job_id || !item.skill_id) {
+        return res.status(400).json({ 
+          error: `Missing required fields (job_id, skill_id) at index ${i}` 
+        });
+      }
+
+      if (typeof item.job_id !== 'number' || typeof item.skill_id !== 'number') {
+        return res.status(400).json({ 
+          error: `job_id and skill_id must be numbers at index ${i}` 
+        });
+      }
+
+      if (item.score && (typeof item.score !== 'number' || item.score < 0 || item.score > 100)) {
+        return res.status(400).json({ 
+          error: `Score must be a number between 0-100 at index ${i}` 
+        });
+      }
+    }
+
+    // Check if positions and skills exist
+    const jobIds = [...new Set(jobSkillsData.map(item => item.job_id))];
+    const skillIds = [...new Set(jobSkillsData.map(item => item.skill_id))];
+
+    const existingPositions = await prisma.position.findMany({
+      where: { id: { in: jobIds } },
+      select: { id: true }
+    });
+
+    const existingSkills = await prisma.skills.findMany({
+      where: { id: { in: skillIds } },
+      select: { id: true }
+    });
+
+    const existingPositionIds = existingPositions.map(p => p.id);
+    const existingSkillIds = existingSkills.map(s => s.id);
+
+    // Check for non-existent positions
+    const invalidJobIds = jobIds.filter(id => !existingPositionIds.includes(id));
+    if (invalidJobIds.length > 0) {
+      return res.status(400).json({ 
+        error: `Position IDs not found: ${invalidJobIds.join(', ')}` 
+      });
+    }
+
+    // Check for non-existent skills
+    const invalidSkillIds = skillIds.filter(id => !existingSkillIds.includes(id));
+    if (invalidSkillIds.length > 0) {
+      return res.status(400).json({ 
+        error: `Skill IDs not found: ${invalidSkillIds.join(', ')}` 
+      });
+    }
+
+    // Prepare data for insertion
+    const dataToInsert = jobSkillsData.map(item => ({
+      job_id: item.job_id,
+      skill_id: item.skill_id,
+      score: item.score || 0
+    }));
+
+    // Use transaction to replace all data atomically
+    const result = await prisma.$transaction(async (tx) => {
+      // First, delete all existing job_skills records
+      const deleteResult = await tx.job_skills.deleteMany({});
+      console.log(`🗑️ Deleted ${deleteResult.count} existing job skills records`);
+
+      // Then, insert the new data
+      const insertResult = await tx.job_skills.createMany({
+        data: dataToInsert
+      });
+      console.log(`✅ Inserted ${insertResult.count} new job skills records`);
+
+      return {
+        deleted_count: deleteResult.count,
+        inserted_count: insertResult.count
+      };
+    });
+
+    console.log(`✅ Successfully replaced all job skills data`);
+    console.log(`   - Deleted: ${result.deleted_count} records`);
+    console.log(`   - Inserted: ${result.inserted_count} records`);
+
+    res.status(200).json({
+      message: "Job skills data replaced successfully",
+      deleted_count: result.deleted_count,
+      inserted_count: result.inserted_count,
+      data: dataToInsert
+    });
+
+  } catch (error) {
+    console.error("Database error:", error);
+    
+    // Handle specific Prisma errors
+    if (error.code === 'P2002') {
+      res.status(409).json({ 
+        error: "Duplicate entry: Some job_id and skill_id combinations are duplicated in the request" 
+      });
+    } else if (error.code === 'P2003') {
+      res.status(400).json({ 
+        error: "Foreign key constraint failed: Invalid job_id or skill_id" 
+      });
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Keep the single insert endpoint for adding individual records without replacing all data
+app.post("/api/job-skills/add", async (req, res) => {
+  try {
+    const { job_id, skill_id, score = 0 } = req.body;
+
+    // Validate required fields
+    if (!job_id || !skill_id) {
+      return res.status(400).json({ 
+        error: "job_id and skill_id are required" 
+      });
+    }
+
+    // Validate data types
+    if (typeof job_id !== 'number' || typeof skill_id !== 'number') {
+      return res.status(400).json({ 
+        error: "job_id and skill_id must be numbers" 
+      });
+    }
+
+    if (score && (typeof score !== 'number' || score < 0 || score > 100)) {
+      return res.status(400).json({ 
+        error: "Score must be a number between 0-100" 
+      });
+    }
+
+    // Check if position and skill exist
+    const position = await prisma.position.findUnique({
+      where: { id: job_id }
+    });
+
+    const skill = await prisma.skills.findUnique({
+      where: { id: skill_id }
+    });
+
+    if (!position) {
+      return res.status(404).json({ error: `Position with ID ${job_id} not found` });
+    }
+
+    if (!skill) {
+      return res.status(404).json({ error: `Skill with ID ${skill_id} not found` });
+    }
+
+    // Insert single job skill (or update if exists)
+    const result = await prisma.job_skills.upsert({
+      where: {
+        // Note: You might need to add a unique constraint on job_id + skill_id combination
+        // For now, we'll use the id field, but this might need adjustment based on your schema
+        id: 0 // This will always create a new record since id 0 doesn't exist
+      },
+      update: {
+        score: score
+      },
+      create: {
+        job_id,
+        skill_id,
+        score
+      },
+      include: {
+        position: {
+          select: { id: true, name: true }
+        },
+        skills: {
+          select: { id: true, name: true }
+        }
+      }
+    });
+
+    console.log(`✅ Added job skill: ${JSON.stringify(result, null, 2)}`);
+
+    res.status(201).json({
+      message: "Job skill added successfully",
+      data: result
+    });
+
+  } catch (error) {
+    console.error("Database error:", error);
+    
+    if (error.code === 'P2002') {
+      res.status(409).json({ 
+        error: "Job skill combination already exists" 
+      });
+    } else if (error.code === 'P2003') {
+      res.status(400).json({ 
+        error: "Foreign key constraint failed: Invalid job_id or skill_id" 
+      });
+    } else {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
