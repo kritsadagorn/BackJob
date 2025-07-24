@@ -58,11 +58,14 @@ model position_details {
   trending_level   Int
   description      String?  @db.MediumText
   responsibilities String?  @db.MediumText
+  language         String   @default("en") @db.VarChar(5)
   trending         trending @relation(fields: [trending_level], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "jobs_trending_FK")
   position         position @relation(fields: [position_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "position_details_ibfk_2")
 
+  @@unique([position_id, language], map: "unique_position_language")
   @@index([trending_level], map: "jobs_trending_FK")
   @@index([position_id], map: "position_id")
+  @@index([position_id, language], map: "idx_position_language")
 }
 
 enum skills_group {
